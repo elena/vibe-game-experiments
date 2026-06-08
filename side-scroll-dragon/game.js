@@ -205,8 +205,8 @@ let hiScore = 0;
 let speed = 4;
 let frameCount = 0;
 let animFrame = 0;
-let lives = 5;
-const MAX_LIVES = 9;
+let hp = 100;
+const MAX_HP = 100;
 let invincibleTimer = 0;   // frames of post-hit invincibility
 const INVINCIBLE_FRAMES = 90;
 let hitPauseTimer = 0;     // brief freeze on hit
@@ -357,9 +357,10 @@ function spawnObstacle() {
 }
 
 // ── Treasure types ────────────────────────────────────────────────────────────
+// heal: HP restored (0 = no heal). isSlow: activates slow powerup.
 const TREASURE_TYPES = [
-  { // gold coin  (low, on ground)
-    w: 14, h: 14, points: 50,
+  { // gold coin (ground level)
+    w: 14, h: 14, points: 50, heal: 0,
     y: () => GROUND - 20,
     color: '#ffcc00',
     draw(ctx, x, y, w, h, t) {
@@ -374,46 +375,112 @@ const TREASURE_TYPES = [
       ctx.fillRect(x + 4, y + 3, 3, 3);
     },
   },
-  { // gem  (mid-air)
-    w: 16, h: 16, points: 150,
+  { // silver coin (low)
+    w: 12, h: 12, points: 25, heal: 0,
+    y: () => GROUND - 18,
+    color: '#ccccff',
+    draw(ctx, x, y, w, h, t) {
+      const shine = Math.floor(t / 5) % 3;
+      ctx.fillStyle = '#7777aa';
+      ctx.fillRect(x + 2, y, w - 4, h);
+      ctx.fillRect(x, y + 2, w, h - 4);
+      ctx.fillStyle = '#aaaaee';
+      ctx.fillRect(x + 3, y + 1, w - 6, h - 2);
+      ctx.fillRect(x + 1, y + 3, w - 2, h - 6);
+      ctx.fillStyle = shine === 0 ? '#ffffff' : '#ddddff';
+      ctx.fillRect(x + 3, y + 2, 2, 2);
+    },
+  },
+  { // coin row — 3 coins in a line (ground)
+    w: 48, h: 14, points: 100, heal: 0,
+    y: () => GROUND - 20,
+    color: '#ffcc00',
+    draw(ctx, x, y, w, h, t) {
+      const shine = Math.floor(t / 6) % 3;
+      for (let i = 0; i < 3; i++) {
+        const cx = x + i * 17;
+        ctx.fillStyle = '#cc8800';
+        ctx.fillRect(cx + 2, y, 10, h);
+        ctx.fillRect(cx, y + 2, 14, h - 4);
+        ctx.fillStyle = '#ffcc00';
+        ctx.fillRect(cx + 3, y + 1, 8, h - 2);
+        ctx.fillRect(cx + 1, y + 3, 12, h - 6);
+        ctx.fillStyle = shine === 0 ? '#ffffff' : '#ffee88';
+        ctx.fillRect(cx + 4, y + 3, 2, 2);
+      }
+    },
+  },
+  { // arc of 5 coins (mid-air arc)
+    w: 60, h: 30, points: 200, heal: 0,
+    y: () => GROUND - 55,
+    color: '#ffcc00',
+    draw(ctx, x, y, w, h, t) {
+      const shine = Math.floor(t / 6) % 3;
+      const offsets = [[0,14],[14,6],[28,0],[42,6],[54,14]];
+      for (const [dx, dy] of offsets) {
+        const cx = x + dx, cy = y + dy;
+        ctx.fillStyle = '#cc8800';
+        ctx.fillRect(cx + 2, cy, 10, 14);
+        ctx.fillRect(cx, cy + 2, 14, 10);
+        ctx.fillStyle = '#ffcc00';
+        ctx.fillRect(cx + 3, cy + 1, 8, 12);
+        ctx.fillRect(cx + 1, cy + 3, 12, 8);
+        ctx.fillStyle = shine === 0 ? '#ffffff' : '#ffee88';
+        ctx.fillRect(cx + 4, cy + 3, 2, 2);
+      }
+    },
+  },
+  { // blue gem (mid-air)
+    w: 16, h: 16, points: 150, heal: 0,
     y: () => GROUND - 70 - Math.random() * 30,
     color: '#00ccff',
     draw(ctx, x, y, w, h, t) {
       const pulse = Math.floor(t / 8) % 2;
       ctx.fillStyle = pulse ? '#0088cc' : '#00aaff';
-      ctx.fillRect(x + 4, y, w - 8, 4);       // top point
-      ctx.fillRect(x + 2, y + 4, w - 4, 6);   // middle
-      ctx.fillRect(x + 4, y + 10, w - 8, 4);  // bottom
+      ctx.fillRect(x + 4, y, w - 8, 4);
+      ctx.fillRect(x + 2, y + 4, w - 4, 6);
+      ctx.fillRect(x + 4, y + 10, w - 8, 4);
       ctx.fillStyle = '#88eeff';
       ctx.fillRect(x + 6, y + 2, 3, 3);
       ctx.fillStyle = pulse ? '#ffffff' : '#aaeeff';
       ctx.fillRect(x + 5, y + 5, 2, 2);
     },
   },
-  { // treasure chest
-    w: 22, h: 18, points: 300,
+  { // red ruby (mid-air, rarer)
+    w: 14, h: 16, points: 250, heal: 0,
+    y: () => GROUND - 65 - Math.random() * 35,
+    color: '#ff2244',
+    draw(ctx, x, y, w, h, t) {
+      const pulse = Math.floor(t / 7) % 2;
+      ctx.fillStyle = pulse ? '#aa0022' : '#cc1133';
+      ctx.fillRect(x + 3, y, w - 6, 4);
+      ctx.fillRect(x + 1, y + 4, w - 2, 7);
+      ctx.fillRect(x + 3, y + 11, w - 6, 4);
+      ctx.fillStyle = '#ff6688';
+      ctx.fillRect(x + 5, y + 2, 3, 3);
+      ctx.fillStyle = pulse ? '#ffffff' : '#ffaabb';
+      ctx.fillRect(x + 4, y + 5, 2, 2);
+    },
+  },
+  { // treasure chest (big score, ground)
+    w: 22, h: 18, points: 400, heal: 0,
     y: () => GROUND - 18,
     color: '#ffaa00',
     draw(ctx, x, y, w, h, t) {
       const open = Math.floor(t / 10) % 2;
-      // body
       ctx.fillStyle = '#7a4800';
       ctx.fillRect(x, y + 6, w, h - 6);
       ctx.fillStyle = '#cc8800';
       ctx.fillRect(x + 1, y + 7, w - 2, h - 8);
-      // straps
       ctx.fillStyle = '#ffaa00';
       ctx.fillRect(x + 8, y + 7, 6, h - 8);
       ctx.fillRect(x + 1, y + 11, w - 2, 2);
-      // lock
       ctx.fillStyle = '#ffdd44';
       ctx.fillRect(x + 9, y + 11, 4, 3);
-      // lid
       ctx.fillStyle = '#7a4800';
       ctx.fillRect(x, y + (open ? 0 : 2), w, 6);
       ctx.fillStyle = '#cc8800';
       ctx.fillRect(x + 1, y + (open ? 1 : 3), w - 2, 4);
-      // sparkles when open
       if (open) {
         ctx.fillStyle = '#ffcc00';
         ctx.fillRect(x + 3, y - 4, 2, 2);
@@ -422,54 +489,124 @@ const TREASURE_TYPES = [
       }
     },
   },
-  { // heart / extra life
-    w: 16, h: 14, points: 0, isLife: true,
-    y: () => GROUND - 60 - Math.random() * 20,
-    color: '#ff4488',
+  { // small health potion (+15 HP)
+    w: 12, h: 18, points: 0, heal: 15,
+    y: () => GROUND - 22,
+    color: '#ff6666',
     draw(ctx, x, y, w, h, t) {
-      const pulse = Math.floor(t / 15) % 2;
-      const s = pulse ? 1 : 0;
-      ctx.fillStyle = '#cc0044';
-      ctx.fillRect(x + 1 - s, y + 2 - s, 6 + s*2, 5 + s*2);
-      ctx.fillRect(x + 9 - s, y + 2 - s, 6 + s*2, 5 + s*2);
-      ctx.fillRect(x - s, y + 5 - s, w + s*2, 5 + s*2);
-      ctx.fillRect(x + 2 - s, y + 9 - s, w - 4 + s*2, 3 + s);
-      ctx.fillRect(x + 5 - s, y + 11 - s, w - 10 + s*2, 2);
-      ctx.fillStyle = '#ff4488';
-      ctx.fillRect(x + 2, y + 3, 3, 3);
-      ctx.fillRect(x + 10, y + 3, 3, 3);
-      ctx.fillStyle = '#ffaabb';
-      ctx.fillRect(x + 3, y + 4, 1, 1);
+      const pulse = Math.floor(t / 12) % 2;
+      // bottle neck
+      ctx.fillStyle = '#885555';
+      ctx.fillRect(x + 3, y, 6, 4);
+      ctx.fillStyle = '#aaaaaa';
+      ctx.fillRect(x + 4, y - 2, 4, 3);
+      // bottle body
+      ctx.fillStyle = pulse ? '#cc2222' : '#ee4444';
+      ctx.fillRect(x, y + 4, w, h - 4);
+      ctx.fillStyle = pulse ? '#ff8888' : '#ffaaaa';
+      ctx.fillRect(x + 2, y + 6, 4, 6);
+      // cross symbol
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x + 4, y + 8, 4, 2);
+      ctx.fillRect(x + 5, y + 7, 2, 4);
+    },
+  },
+  { // large health potion (+35 HP, mid-air)
+    w: 14, h: 22, points: 0, heal: 35,
+    y: () => GROUND - 65 - Math.random() * 20,
+    color: '#ff3333',
+    draw(ctx, x, y, w, h, t) {
+      const pulse = Math.floor(t / 10) % 2;
+      ctx.fillStyle = '#885555';
+      ctx.fillRect(x + 4, y, 6, 5);
+      ctx.fillStyle = '#cccccc';
+      ctx.fillRect(x + 5, y - 3, 4, 4);
+      ctx.fillStyle = pulse ? '#bb1111' : '#dd3333';
+      ctx.fillRect(x, y + 5, w, h - 5);
+      ctx.fillStyle = pulse ? '#ff6666' : '#ff9999';
+      ctx.fillRect(x + 2, y + 7, 5, 9);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x + 5, y + 10, 4, 2);
+      ctx.fillRect(x + 6, y + 9, 2, 4);
+      // star sparkle when pulsing
+      if (pulse) {
+        ctx.fillStyle = '#ffdddd';
+        ctx.fillRect(x + 1, y + 6, 1, 1);
+        ctx.fillRect(x + w - 2, y + 6, 1, 1);
+      }
+    },
+  },
+  { // full heal elixir (+60 HP, rare, high mid-air)
+    w: 16, h: 22, points: 100, heal: 60,
+    y: () => GROUND - 90 - Math.random() * 20,
+    color: '#ff88ff',
+    draw(ctx, x, y, w, h, t) {
+      const pulse = Math.floor(t / 8) % 2;
+      const spin = Math.floor(t / 4) % 4;
+      ctx.fillStyle = '#663366';
+      ctx.fillRect(x + 5, y, 6, 5);
+      ctx.fillStyle = '#dddddd';
+      ctx.fillRect(x + 6, y - 3, 4, 4);
+      ctx.fillStyle = pulse ? '#aa22aa' : '#cc44cc';
+      ctx.fillRect(x, y + 5, w, h - 5);
+      ctx.fillStyle = pulse ? '#ee88ee' : '#ffaaff';
+      ctx.fillRect(x + 2, y + 7, 5, 10);
+      // animated sparkles
+      ctx.fillStyle = '#ffffff';
+      if (spin === 0) { ctx.fillRect(x + 3, y + 4, 2, 2); ctx.fillRect(x + 11, y + 10, 2, 2); }
+      if (spin === 1) { ctx.fillRect(x + 11, y + 4, 2, 2); ctx.fillRect(x + 3, y + 14, 2, 2); }
+      if (spin === 2) { ctx.fillRect(x + 7, y + 2, 2, 2); ctx.fillRect(x + 7, y + 16, 2, 2); }
+      if (spin === 3) { ctx.fillRect(x + 1, y + 10, 2, 2); ctx.fillRect(x + 13, y + 10, 2, 2); }
+      // cross
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x + 6, y + 11, 4, 2);
+      ctx.fillRect(x + 7, y + 10, 2, 4);
+    },
+  },
+  { // dragon egg (+10 HP, ground)
+    w: 18, h: 20, points: 75, heal: 10,
+    y: () => GROUND - 20,
+    color: '#88ff44',
+    draw(ctx, x, y, w, h, t) {
+      const pulse = Math.floor(t / 14) % 2;
+      ctx.fillStyle = pulse ? '#227700' : '#339900';
+      ctx.fillRect(x + 4, y, w - 8, h);
+      ctx.fillRect(x + 2, y + 3, w - 4, h - 6);
+      ctx.fillRect(x, y + 6, w, h - 12);
+      ctx.fillStyle = pulse ? '#55cc22' : '#77ee33';
+      ctx.fillRect(x + 5, y + 2, w - 10, h - 4);
+      ctx.fillRect(x + 3, y + 5, w - 6, h - 10);
+      // spots
+      ctx.fillStyle = '#aaffaa';
+      ctx.fillRect(x + 5, y + 5, 3, 3);
+      ctx.fillRect(x + 10, y + 10, 2, 2);
+      ctx.fillRect(x + 6, y + 13, 3, 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x + 6, y + 6, 1, 1);
     },
   },
   { // slowdown hourglass powerup
-    w: 18, h: 20, points: 0, isSlow: true,
+    w: 18, h: 20, points: 0, heal: 0, isSlow: true,
     y: () => GROUND - 55 - Math.random() * 25,
     color: '#00ffcc',
     draw(ctx, x, y, w, h, t) {
       const pulse = Math.floor(t / 10) % 2;
       const glow = pulse ? '#00ffcc' : '#00ccaa';
-      // hourglass outline
       ctx.fillStyle = '#005544';
       ctx.fillRect(x + 1, y, w - 2, 3);
       ctx.fillRect(x + 1, y + h - 3, w - 2, 3);
-      // top sand
       ctx.fillStyle = glow;
       ctx.fillRect(x + 3, y + 3, w - 6, 5);
       ctx.fillRect(x + 5, y + 7, w - 10, 3);
-      // neck
       ctx.fillStyle = '#003333';
       ctx.fillRect(x + 8, y + 9, 2, 2);
-      // bottom sand (filling up)
-      const fill = Math.floor(t / 8) % 5;
+      const sandFill = Math.floor(t / 8) % 5;
       ctx.fillStyle = glow;
-      ctx.fillRect(x + 5, y + h - 6 - fill, w - 10, 2 + fill);
+      ctx.fillRect(x + 5, y + h - 6 - sandFill, w - 10, 2 + sandFill);
       ctx.fillRect(x + 3, y + h - 5, w - 6, 2);
-      // side pillars
       ctx.fillStyle = '#006655';
       ctx.fillRect(x, y, 3, h);
       ctx.fillRect(x + w - 3, y, 3, h);
-      // sparkle
       if (pulse) {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(x + 4, y + 1, 1, 1);
@@ -481,7 +618,7 @@ const TREASURE_TYPES = [
 
 function spawnTreasure() {
   let pool = TREASURE_TYPES.filter(t => {
-    if (t.isLife && lives >= MAX_LIVES) return false;
+    if (t.heal > 0 && hp >= MAX_HP) return false;
     if (t.isSlow && slowTimer > 0) return false;
     return true;
   });
@@ -492,7 +629,7 @@ function spawnTreasure() {
     w: type.w,
     h: type.h,
     points: type.points,
-    isLife: !!type.isLife,
+    heal: type.heal || 0,
     isSlow: !!type.isSlow,
     color: type.color,
     draw: type.draw,
@@ -562,8 +699,8 @@ function resetGame() {
   obstacleTimer = 0;
   obstacleInterval = 90;
   treasureTimer = 0;
-  treasureInterval = 200;
-  lives = 5;
+  treasureInterval = 120;
+  hp = MAX_HP;
   invincibleTimer = 0;
   hitPauseTimer = 0;
   slowTimer = 0;
@@ -730,31 +867,37 @@ function drawHUD() {
     ctx.textAlign = 'left';
   }
 
-  // Draw lives as pixel hearts on the canvas
-  const heartW = 14, heartH = 12, heartGap = 3;
-  const startX = W - (heartW + heartGap) * MAX_LIVES + heartGap - 4;
-  const startY = 10;
-  for (let i = 0; i < MAX_LIVES; i++) {
-    const hx = startX + i * (heartW + heartGap);
-    const hy = startY;
-    if (i < lives) {
-      ctx.fillStyle = '#cc0044';
-      ctx.fillRect(hx + 1, hy + 2, 5, 4);
-      ctx.fillRect(hx + 8, hy + 2, 5, 4);
-      ctx.fillRect(hx, hy + 4, heartW, 4);
-      ctx.fillRect(hx + 2, hy + 8, heartW - 4, 2);
-      ctx.fillRect(hx + 4, hy + 10, heartW - 8, 2);
-      ctx.fillStyle = '#ff4488';
-      ctx.fillRect(hx + 2, hy + 3, 2, 2);
-    } else {
-      ctx.fillStyle = '#441122';
-      ctx.fillRect(hx + 1, hy + 2, 5, 4);
-      ctx.fillRect(hx + 8, hy + 2, 5, 4);
-      ctx.fillRect(hx, hy + 4, heartW, 4);
-      ctx.fillRect(hx + 2, hy + 8, heartW - 4, 2);
-      ctx.fillRect(hx + 4, hy + 10, heartW - 8, 2);
-    }
+  // Health bar
+  const barW = 120, barH = 10;
+  const barX = W - barW - 8, barY = 8;
+  // background track
+  ctx.fillStyle = '#220011';
+  ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
+  // filled portion — colour shifts green→yellow→red as HP drops
+  const frac = hp / MAX_HP;
+  const fillW = Math.max(0, Math.round(frac * barW));
+  let barColor;
+  if (frac > 0.6)      barColor = '#33ee44';
+  else if (frac > 0.3) barColor = '#ffcc00';
+  else                 barColor = '#ff2222';
+  // blink below 25%
+  const lowBlink = hp <= 25 && Math.floor(frameCount / 8) % 2 === 0;
+  if (!lowBlink) {
+    ctx.fillStyle = barColor;
+    ctx.fillRect(barX, barY, fillW, barH);
   }
+  // tick marks every 25 HP
+  ctx.fillStyle = '#000000';
+  for (let tick = 25; tick < MAX_HP; tick += 25) {
+    const tx = barX + Math.round((tick / MAX_HP) * barW);
+    ctx.fillRect(tx, barY, 1, barH);
+  }
+  // HP label
+  ctx.fillStyle = '#ffaacc';
+  ctx.font = '8px Courier New';
+  ctx.textAlign = 'right';
+  ctx.fillText(`HP ${hp}/${MAX_HP}`, barX - 3, barY + 8);
+  ctx.textAlign = 'left';
 }
 
 // ── Death / hit screens ───────────────────────────────────────────────────────
@@ -767,7 +910,7 @@ function showHitScreen() {
   ctx.fillText('OUCH!', W / 2, H / 2 - 10);
   ctx.fillStyle = '#ffcc00';
   ctx.font = '14px Courier New';
-  ctx.fillText(`LIVES REMAINING: ${lives}`, W / 2, H / 2 + 16);
+  ctx.fillText(`HP: ${hp} / ${MAX_HP}`, W / 2, H / 2 + 16);
   ctx.textAlign = 'left';
 }
 
@@ -842,7 +985,7 @@ function loop() {
     if (treasureTimer >= treasureInterval) {
       spawnTreasure();
       treasureTimer = 0;
-      treasureInterval = 160 + Math.floor(Math.random() * 120);
+      treasureInterval = 80 + Math.floor(Math.random() * 70);
     }
 
     // Update player
@@ -890,18 +1033,21 @@ function loop() {
       if (rectsOverlap(pBox, tBox)) {
         t.collected = true;
         treasuresCollected++;
-        if (t.isLife && lives < MAX_LIVES) {
-          lives++;
-          spawnFloatingText(t.x, t.y, '+LIFE!', '#ff4488');
-          spawnParticles(t.x + t.w / 2, t.y + t.h / 2, '#ff4488', 12);
-        } else if (t.isSlow) {
+        if (t.isSlow) {
           slowTimer = SLOW_DURATION;
           spawnFloatingText(t.x, t.y, 'SLOW!', '#00ffcc');
           spawnParticles(t.x + t.w / 2, t.y + t.h / 2, '#00ffcc', 14);
-        } else if (!t.isLife) {
-          score += t.points;
-          spawnFloatingText(t.x, t.y, `+${t.points}`, t.color);
-          spawnParticles(t.x + t.w / 2, t.y + t.h / 2, t.color, 10);
+        } else {
+          if (t.heal > 0) {
+            hp = Math.min(MAX_HP, hp + t.heal);
+            spawnFloatingText(t.x, t.y, `+${t.heal} HP`, '#ff6666');
+            spawnParticles(t.x + t.w / 2, t.y + t.h / 2, '#ff6666', 10);
+          }
+          if (t.points > 0) {
+            score += t.points;
+            spawnFloatingText(t.x, t.y - (t.heal > 0 ? 14 : 0), `+${t.points}`, t.color);
+            spawnParticles(t.x + t.w / 2, t.y + t.h / 2, t.color, 8);
+          }
         }
       }
     }
@@ -911,10 +1057,11 @@ function loop() {
       for (const o of obstacles) {
         const oBox = { x: o.x + 4, y: o.y + 4, w: o.w - 8, h: o.h - 4 };
         if (rectsOverlap(pBox, oBox)) {
-          lives--;
+          hp -= 25;
           spawnParticles(PLAYER_X, playerY - 20, '#ff4400', 16);
           spawnParticles(PLAYER_X, playerY - 20, '#ffcc00', 8);
-          if (lives <= 0) {
+          if (hp <= 0) {
+            hp = 0;
             state = 'dead';
           } else {
             state = 'hit';
