@@ -206,10 +206,15 @@ let speed = 4;
 let frameCount = 0;
 let animFrame = 0;
 let lives = 5;
+const MAX_LIVES = 9;
 let invincibleTimer = 0;   // frames of post-hit invincibility
 const INVINCIBLE_FRAMES = 90;
 let hitPauseTimer = 0;     // brief freeze on hit
 const HIT_PAUSE_FRAMES = 40;
+let slowTimer = 0;         // frames remaining of slowdown powerup
+const SLOW_DURATION = 300; // 5 seconds at 60fps
+const SLOW_MIN_SPEED = 4.0;
+let treasuresCollected = 0;
 
 // Treasures
 let treasures = [];
@@ -437,13 +442,49 @@ const TREASURE_TYPES = [
       ctx.fillRect(x + 3, y + 4, 1, 1);
     },
   },
+  { // slowdown hourglass powerup
+    w: 18, h: 20, points: 0, isSlow: true,
+    y: () => GROUND - 55 - Math.random() * 25,
+    color: '#00ffcc',
+    draw(ctx, x, y, w, h, t) {
+      const pulse = Math.floor(t / 10) % 2;
+      const glow = pulse ? '#00ffcc' : '#00ccaa';
+      // hourglass outline
+      ctx.fillStyle = '#005544';
+      ctx.fillRect(x + 1, y, w - 2, 3);
+      ctx.fillRect(x + 1, y + h - 3, w - 2, 3);
+      // top sand
+      ctx.fillStyle = glow;
+      ctx.fillRect(x + 3, y + 3, w - 6, 5);
+      ctx.fillRect(x + 5, y + 7, w - 10, 3);
+      // neck
+      ctx.fillStyle = '#003333';
+      ctx.fillRect(x + 8, y + 9, 2, 2);
+      // bottom sand (filling up)
+      const fill = Math.floor(t / 8) % 5;
+      ctx.fillStyle = glow;
+      ctx.fillRect(x + 5, y + h - 6 - fill, w - 10, 2 + fill);
+      ctx.fillRect(x + 3, y + h - 5, w - 6, 2);
+      // side pillars
+      ctx.fillStyle = '#006655';
+      ctx.fillRect(x, y, 3, h);
+      ctx.fillRect(x + w - 3, y, 3, h);
+      // sparkle
+      if (pulse) {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(x + 4, y + 1, 1, 1);
+        ctx.fillRect(x + w - 5, y + h - 2, 1, 1);
+      }
+    },
+  },
 ];
 
 function spawnTreasure() {
-  // Rare chance for life heart (only if lives < 5)
-  let pool = lives < 5
-    ? TREASURE_TYPES
-    : TREASURE_TYPES.filter(t => !t.isLife);
+  let pool = TREASURE_TYPES.filter(t => {
+    if (t.isLife && lives >= MAX_LIVES) return false;
+    if (t.isSlow && slowTimer > 0) return false;
+    return true;
+  });
   const type = pool[Math.floor(Math.random() * pool.length)];
   treasures.push({
     x: W + 10,
@@ -452,6 +493,7 @@ function spawnTreasure() {
     h: type.h,
     points: type.points,
     isLife: !!type.isLife,
+    isSlow: !!type.isSlow,
     color: type.color,
     draw: type.draw,
     collected: false,
@@ -524,6 +566,8 @@ function resetGame() {
   lives = 5;
   invincibleTimer = 0;
   hitPauseTimer = 0;
+  slowTimer = 0;
+  treasuresCollected = 0;
 }
 
 function restartGame() {
@@ -622,9 +666,9 @@ function drawBackground() {
 function drawPlayer() {
   const sp = builtSprites[selectedAvatar];
   let sprite;
-  const tick = Math.floor(frameCount / 8);
+  const tick = Math.floor(frameCount / 12);
 
-  if (isJumping || playerY < GROUND - 2) {
+  if (playerY < GROUND - 2) {
     sprite = sp.jump;
   } else if (isDucking) {
     sprite = tick % 2 === 0 ? sp.duck0 : sp.duck1;
@@ -666,16 +710,34 @@ function drawHUD() {
   document.getElementById('score-ui').textContent = `SCORE: ${Math.floor(score)}`;
   document.getElementById('hi-score-ui').textContent = `BEST: ${Math.floor(hiScore)}`;
   document.getElementById('speed-ui').textContent = `SPEED: ${speed.toFixed(1)}`;
+  document.getElementById('treasure-ui').textContent = `LOOT: ${treasuresCollected}`;
+
+  // Slow powerup timer bar
+  if (slowTimer > 0) {
+    const barW = 80;
+    const barX = W / 2 - barW / 2;
+    const barY = 8;
+    ctx.fillStyle = '#003333';
+    ctx.fillRect(barX, barY, barW, 8);
+    const fill = Math.round((slowTimer / SLOW_DURATION) * barW);
+    const blink = slowTimer < 90 && Math.floor(frameCount / 6) % 2 === 0;
+    ctx.fillStyle = blink ? '#ffffff' : '#00ffcc';
+    ctx.fillRect(barX, barY, fill, 8);
+    ctx.fillStyle = '#00ffcc';
+    ctx.font = '8px Courier New';
+    ctx.textAlign = 'center';
+    ctx.fillText('SLOW', W / 2, barY + 16);
+    ctx.textAlign = 'left';
+  }
 
   // Draw lives as pixel hearts on the canvas
-  const heartW = 14, heartH = 12, heartGap = 4;
-  const startX = W - (heartW + heartGap) * 5 + heartGap - 8;
+  const heartW = 14, heartH = 12, heartGap = 3;
+  const startX = W - (heartW + heartGap) * MAX_LIVES + heartGap - 4;
   const startY = 10;
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < MAX_LIVES; i++) {
     const hx = startX + i * (heartW + heartGap);
     const hy = startY;
     if (i < lives) {
-      // filled heart
       ctx.fillStyle = '#cc0044';
       ctx.fillRect(hx + 1, hy + 2, 5, 4);
       ctx.fillRect(hx + 8, hy + 2, 5, 4);
@@ -685,7 +747,6 @@ function drawHUD() {
       ctx.fillStyle = '#ff4488';
       ctx.fillRect(hx + 2, hy + 3, 2, 2);
     } else {
-      // empty heart outline
       ctx.fillStyle = '#441122';
       ctx.fillRect(hx + 1, hy + 2, 5, 4);
       ctx.fillRect(hx + 8, hy + 2, 5, 4);
@@ -722,6 +783,9 @@ function showDeathScreen() {
   ctx.fillStyle = '#ffcc00';
   ctx.font = '16px Courier New';
   ctx.fillText(`SCORE: ${Math.floor(score)}   BEST: ${Math.floor(hiScore)}`, W / 2, H / 2 + 5);
+  ctx.fillStyle = '#00ffcc';
+  ctx.font = '13px Courier New';
+  ctx.fillText(`LOOT COLLECTED: ${treasuresCollected}`, W / 2, H / 2 + 24);
 
   ctx.fillStyle = '#aaaaaa';
   ctx.font = '13px Courier New';
@@ -757,8 +821,12 @@ function loop() {
     if (invincibleTimer > 0) invincibleTimer--;
 
     // Increase speed over time
-    speed = 4 + Math.floor(score / 300) * 0.5;
-    speed = Math.min(speed, 12);
+    const baseSpeed = 4 + Math.floor(score / 300) * 0.5;
+    speed = Math.min(baseSpeed, 12);
+    if (slowTimer > 0) {
+      slowTimer--;
+      speed = Math.max(SLOW_MIN_SPEED, speed * 0.55);
+    }
 
     // Spawn obstacles
     obstacleTimer++;
@@ -821,10 +889,15 @@ function loop() {
       const tBox = { x: t.x, y: t.y, w: t.w, h: t.h };
       if (rectsOverlap(pBox, tBox)) {
         t.collected = true;
-        if (t.isLife && lives < 5) {
+        treasuresCollected++;
+        if (t.isLife && lives < MAX_LIVES) {
           lives++;
           spawnFloatingText(t.x, t.y, '+LIFE!', '#ff4488');
           spawnParticles(t.x + t.w / 2, t.y + t.h / 2, '#ff4488', 12);
+        } else if (t.isSlow) {
+          slowTimer = SLOW_DURATION;
+          spawnFloatingText(t.x, t.y, 'SLOW!', '#00ffcc');
+          spawnParticles(t.x + t.w / 2, t.y + t.h / 2, '#00ffcc', 14);
         } else if (!t.isLife) {
           score += t.points;
           spawnFloatingText(t.x, t.y, `+${t.points}`, t.color);
