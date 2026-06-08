@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>T-Rex Runner</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-container">
+    <canvas id="game-canvas" width="800" height="300"></canvas>
+    <div id="ui-overlay">
+      <div id="score-display">HI <span id="hi-score">00000</span> <span id="score">00000</span></div>
+    </div>
+    <div id="start-screen" class="screen">
+      <div class="dino-icon"></div>
+      <p>Press <kbd>Space</kbd> or <kbd>↑</kbd> to start</p>
+      <p class="mobile-hint">Tap to start on mobile</p>
+    </div>
+    <div id="game-over-screen" class="screen hidden">
+      <p class="game-over-text">G A M E  O V E R</p>
+      <button id="restart-btn">Restart</button>
+      <p class="restart-hint">or press <kbd>Space</kbd></p>
+    </div>
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>
