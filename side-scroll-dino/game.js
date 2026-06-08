@@ -199,12 +199,22 @@ builtSprites.forEach((sp, i) => {
 });
 
 // ── Game state ────────────────────────────────────────────────────────────────
-let state = 'menu'; // 'menu' | 'playing' | 'dead'
+let state = 'menu'; // 'menu' | 'playing' | 'hit' | 'dead'
 let score = 0;
 let hiScore = 0;
 let speed = 4;
 let frameCount = 0;
 let animFrame = 0;
+let lives = 5;
+let invincibleTimer = 0;   // frames of post-hit invincibility
+const INVINCIBLE_FRAMES = 90;
+let hitPauseTimer = 0;     // brief freeze on hit
+const HIT_PAUSE_FRAMES = 40;
+
+// Treasures
+let treasures = [];
+let treasureTimer = 0;
+let treasureInterval = 200;
 
 // Player
 const PLAYER_X = 80;
@@ -341,6 +351,113 @@ function spawnObstacle() {
   });
 }
 
+// ── Treasure types ────────────────────────────────────────────────────────────
+const TREASURE_TYPES = [
+  { // gold coin  (low, on ground)
+    w: 14, h: 14, points: 50,
+    y: () => GROUND - 20,
+    color: '#ffcc00',
+    draw(ctx, x, y, w, h, t) {
+      const shine = Math.floor(t / 6) % 3;
+      ctx.fillStyle = '#cc8800';
+      ctx.fillRect(x + 2, y, w - 4, h);
+      ctx.fillRect(x, y + 2, w, h - 4);
+      ctx.fillStyle = '#ffcc00';
+      ctx.fillRect(x + 3, y + 1, w - 6, h - 2);
+      ctx.fillRect(x + 1, y + 3, w - 2, h - 6);
+      ctx.fillStyle = shine === 0 ? '#ffffff' : '#ffee88';
+      ctx.fillRect(x + 4, y + 3, 3, 3);
+    },
+  },
+  { // gem  (mid-air)
+    w: 16, h: 16, points: 150,
+    y: () => GROUND - 70 - Math.random() * 30,
+    color: '#00ccff',
+    draw(ctx, x, y, w, h, t) {
+      const pulse = Math.floor(t / 8) % 2;
+      ctx.fillStyle = pulse ? '#0088cc' : '#00aaff';
+      ctx.fillRect(x + 4, y, w - 8, 4);       // top point
+      ctx.fillRect(x + 2, y + 4, w - 4, 6);   // middle
+      ctx.fillRect(x + 4, y + 10, w - 8, 4);  // bottom
+      ctx.fillStyle = '#88eeff';
+      ctx.fillRect(x + 6, y + 2, 3, 3);
+      ctx.fillStyle = pulse ? '#ffffff' : '#aaeeff';
+      ctx.fillRect(x + 5, y + 5, 2, 2);
+    },
+  },
+  { // treasure chest
+    w: 22, h: 18, points: 300,
+    y: () => GROUND - 18,
+    color: '#ffaa00',
+    draw(ctx, x, y, w, h, t) {
+      const open = Math.floor(t / 10) % 2;
+      // body
+      ctx.fillStyle = '#7a4800';
+      ctx.fillRect(x, y + 6, w, h - 6);
+      ctx.fillStyle = '#cc8800';
+      ctx.fillRect(x + 1, y + 7, w - 2, h - 8);
+      // straps
+      ctx.fillStyle = '#ffaa00';
+      ctx.fillRect(x + 8, y + 7, 6, h - 8);
+      ctx.fillRect(x + 1, y + 11, w - 2, 2);
+      // lock
+      ctx.fillStyle = '#ffdd44';
+      ctx.fillRect(x + 9, y + 11, 4, 3);
+      // lid
+      ctx.fillStyle = '#7a4800';
+      ctx.fillRect(x, y + (open ? 0 : 2), w, 6);
+      ctx.fillStyle = '#cc8800';
+      ctx.fillRect(x + 1, y + (open ? 1 : 3), w - 2, 4);
+      // sparkles when open
+      if (open) {
+        ctx.fillStyle = '#ffcc00';
+        ctx.fillRect(x + 3, y - 4, 2, 2);
+        ctx.fillRect(x + 10, y - 6, 2, 2);
+        ctx.fillRect(x + 17, y - 3, 2, 2);
+      }
+    },
+  },
+  { // heart / extra life
+    w: 16, h: 14, points: 0, isLife: true,
+    y: () => GROUND - 60 - Math.random() * 20,
+    color: '#ff4488',
+    draw(ctx, x, y, w, h, t) {
+      const pulse = Math.floor(t / 15) % 2;
+      const s = pulse ? 1 : 0;
+      ctx.fillStyle = '#cc0044';
+      ctx.fillRect(x + 1 - s, y + 2 - s, 6 + s*2, 5 + s*2);
+      ctx.fillRect(x + 9 - s, y + 2 - s, 6 + s*2, 5 + s*2);
+      ctx.fillRect(x - s, y + 5 - s, w + s*2, 5 + s*2);
+      ctx.fillRect(x + 2 - s, y + 9 - s, w - 4 + s*2, 3 + s);
+      ctx.fillRect(x + 5 - s, y + 11 - s, w - 10 + s*2, 2);
+      ctx.fillStyle = '#ff4488';
+      ctx.fillRect(x + 2, y + 3, 3, 3);
+      ctx.fillRect(x + 10, y + 3, 3, 3);
+      ctx.fillStyle = '#ffaabb';
+      ctx.fillRect(x + 3, y + 4, 1, 1);
+    },
+  },
+];
+
+function spawnTreasure() {
+  // Rare chance for life heart (only if lives < 5)
+  let pool = lives < 5
+    ? TREASURE_TYPES
+    : TREASURE_TYPES.filter(t => !t.isLife);
+  const type = pool[Math.floor(Math.random() * pool.length)];
+  treasures.push({
+    x: W + 10,
+    y: type.y(),
+    w: type.w,
+    h: type.h,
+    points: type.points,
+    isLife: !!type.isLife,
+    color: type.color,
+    draw: type.draw,
+    collected: false,
+  });
+}
+
 // ── Input ─────────────────────────────────────────────────────────────────────
 const keys = {};
 document.addEventListener('keydown', e => {
@@ -398,9 +515,15 @@ function resetGame() {
   isDucking = false;
   isJumping = false;
   obstacles = [];
+  treasures = [];
   particles = [];
   obstacleTimer = 0;
   obstacleInterval = 90;
+  treasureTimer = 0;
+  treasureInterval = 200;
+  lives = 5;
+  invincibleTimer = 0;
+  hitPauseTimer = 0;
 }
 
 function restartGame() {
@@ -543,12 +666,52 @@ function drawHUD() {
   document.getElementById('score-ui').textContent = `SCORE: ${Math.floor(score)}`;
   document.getElementById('hi-score-ui').textContent = `BEST: ${Math.floor(hiScore)}`;
   document.getElementById('speed-ui').textContent = `SPEED: ${speed.toFixed(1)}`;
+
+  // Draw lives as pixel hearts on the canvas
+  const heartW = 14, heartH = 12, heartGap = 4;
+  const startX = W - (heartW + heartGap) * 5 + heartGap - 8;
+  const startY = 10;
+  for (let i = 0; i < 5; i++) {
+    const hx = startX + i * (heartW + heartGap);
+    const hy = startY;
+    if (i < lives) {
+      // filled heart
+      ctx.fillStyle = '#cc0044';
+      ctx.fillRect(hx + 1, hy + 2, 5, 4);
+      ctx.fillRect(hx + 8, hy + 2, 5, 4);
+      ctx.fillRect(hx, hy + 4, heartW, 4);
+      ctx.fillRect(hx + 2, hy + 8, heartW - 4, 2);
+      ctx.fillRect(hx + 4, hy + 10, heartW - 8, 2);
+      ctx.fillStyle = '#ff4488';
+      ctx.fillRect(hx + 2, hy + 3, 2, 2);
+    } else {
+      // empty heart outline
+      ctx.fillStyle = '#441122';
+      ctx.fillRect(hx + 1, hy + 2, 5, 4);
+      ctx.fillRect(hx + 8, hy + 2, 5, 4);
+      ctx.fillRect(hx, hy + 4, heartW, 4);
+      ctx.fillRect(hx + 2, hy + 8, heartW - 4, 2);
+      ctx.fillRect(hx + 4, hy + 10, heartW - 8, 2);
+    }
+  }
 }
 
-// ── Death screen ──────────────────────────────────────────────────────────────
+// ── Death / hit screens ───────────────────────────────────────────────────────
+function showHitScreen() {
+  ctx.fillStyle = 'rgba(180,0,0,0.35)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#ff4400';
+  ctx.font = 'bold 22px Courier New';
+  ctx.textAlign = 'center';
+  ctx.fillText('OUCH!', W / 2, H / 2 - 10);
+  ctx.fillStyle = '#ffcc00';
+  ctx.font = '14px Courier New';
+  ctx.fillText(`LIVES REMAINING: ${lives}`, W / 2, H / 2 + 16);
+  ctx.textAlign = 'left';
+}
+
 function showDeathScreen() {
-  // Dark overlay on canvas
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
   ctx.fillRect(0, 0, W, H);
 
   ctx.fillStyle = '#ff4400';
@@ -566,15 +729,32 @@ function showDeathScreen() {
   ctx.textAlign = 'left';
 }
 
+// ── Floating score text ───────────────────────────────────────────────────────
+let floatingTexts = [];
+function spawnFloatingText(x, y, text, color) {
+  floatingTexts.push({ x, y, text, color, life: 50, maxLife: 50, vy: -1.2 });
+}
+
 // ── Main loop ─────────────────────────────────────────────────────────────────
 function loop() {
   ctx.clearRect(0, 0, W, H);
   drawBackground();
 
+  if (state === 'hit') {
+    // Brief pause showing "OUCH" then resume
+    hitPauseTimer--;
+    if (hitPauseTimer <= 0) {
+      state = 'playing';
+      invincibleTimer = INVINCIBLE_FRAMES;
+    }
+  }
+
   if (state === 'playing') {
     frameCount++;
     score += speed * 0.05;
     if (score > hiScore) hiScore = score;
+
+    if (invincibleTimer > 0) invincibleTimer--;
 
     // Increase speed over time
     speed = 4 + Math.floor(score / 300) * 0.5;
@@ -587,6 +767,14 @@ function loop() {
       spawnObstacle();
       obstacleTimer = 0;
       obstacleInterval = minInterval + Math.floor(Math.random() * 40);
+    }
+
+    // Spawn treasures
+    treasureTimer++;
+    if (treasureTimer >= treasureInterval) {
+      spawnTreasure();
+      treasureTimer = 0;
+      treasureInterval = 160 + Math.floor(Math.random() * 120);
     }
 
     // Update player
@@ -604,6 +792,12 @@ function loop() {
       o.x -= speed;
     }
 
+    // Update treasures
+    treasures = treasures.filter(t => t.x + t.w > -10 && !t.collected);
+    for (const t of treasures) {
+      t.x -= speed;
+    }
+
     // Update particles
     particles = particles.filter(p => p.life > 0);
     for (const p of particles) {
@@ -613,17 +807,55 @@ function loop() {
       p.life--;
     }
 
-    // Collision check
+    // Update floating texts
+    floatingTexts = floatingTexts.filter(f => f.life > 0);
+    for (const f of floatingTexts) {
+      f.y += f.vy;
+      f.life--;
+    }
+
     const pBox = getPlayerBox();
-    for (const o of obstacles) {
-      const oBox = { x: o.x + 4, y: o.y + 4, w: o.w - 8, h: o.h - 4 };
-      if (rectsOverlap(pBox, oBox)) {
-        state = 'dead';
-        spawnParticles(PLAYER_X, playerY - 20, '#ff4400', 20);
-        spawnParticles(PLAYER_X, playerY - 20, '#ffcc00', 10);
-        break;
+
+    // Treasure collection
+    for (const t of treasures) {
+      const tBox = { x: t.x, y: t.y, w: t.w, h: t.h };
+      if (rectsOverlap(pBox, tBox)) {
+        t.collected = true;
+        if (t.isLife && lives < 5) {
+          lives++;
+          spawnFloatingText(t.x, t.y, '+LIFE!', '#ff4488');
+          spawnParticles(t.x + t.w / 2, t.y + t.h / 2, '#ff4488', 12);
+        } else if (!t.isLife) {
+          score += t.points;
+          spawnFloatingText(t.x, t.y, `+${t.points}`, t.color);
+          spawnParticles(t.x + t.w / 2, t.y + t.h / 2, t.color, 10);
+        }
       }
     }
+
+    // Obstacle collision (only when not invincible)
+    if (invincibleTimer <= 0) {
+      for (const o of obstacles) {
+        const oBox = { x: o.x + 4, y: o.y + 4, w: o.w - 8, h: o.h - 4 };
+        if (rectsOverlap(pBox, oBox)) {
+          lives--;
+          spawnParticles(PLAYER_X, playerY - 20, '#ff4400', 16);
+          spawnParticles(PLAYER_X, playerY - 20, '#ffcc00', 8);
+          if (lives <= 0) {
+            state = 'dead';
+          } else {
+            state = 'hit';
+            hitPauseTimer = HIT_PAUSE_FRAMES;
+          }
+          break;
+        }
+      }
+    }
+  }
+
+  // Draw treasures
+  for (const t of treasures) {
+    if (!t.collected) t.draw(ctx, t.x, t.y, t.w, t.h, frameCount);
   }
 
   // Draw obstacles
@@ -633,26 +865,32 @@ function loop() {
 
   // Draw particles
   for (const p of particles) {
-    const alpha = p.life / p.maxLife;
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = p.life / p.maxLife;
     ctx.fillStyle = p.color;
     ctx.fillRect(p.x, p.y, p.size, p.size);
   }
   ctx.globalAlpha = 1;
 
-  // Draw player
-  drawPlayer();
+  // Draw player (blink when invincible)
+  const blink = invincibleTimer > 0 && Math.floor(invincibleTimer / 6) % 2 === 0;
+  if (!blink) drawPlayer();
+
+  // Draw floating score texts
+  for (const f of floatingTexts) {
+    ctx.globalAlpha = f.life / f.maxLife;
+    ctx.fillStyle = f.color;
+    ctx.font = 'bold 13px Courier New';
+    ctx.fillText(f.text, f.x, f.y);
+  }
+  ctx.globalAlpha = 1;
 
   drawHUD();
 
-  if (state === 'dead') {
+  if (state === 'hit') {
+    showHitScreen();
+  } else if (state === 'dead') {
     showDeathScreen();
-    requestAnimationFrame(loop);
-    return;
   }
 
   requestAnimationFrame(loop);
 }
-
-// ── Show score on overlay after death ────────────────────────────────────────
-// (handled inline in showDeathScreen on canvas)
