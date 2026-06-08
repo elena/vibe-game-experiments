@@ -211,6 +211,8 @@ let invincibleTimer = 0;   // frames of post-hit invincibility
 const INVINCIBLE_FRAMES = 90;
 let hitPauseTimer = 0;     // brief freeze on hit
 const HIT_PAUSE_FRAMES = 40;
+let deathTimer = 0;        // counts up after death explosion triggers
+const DEATH_EXPLODE_FRAMES = 180; // 3 seconds of explosion before overlay
 let slowTimer = 0;         // frames remaining of slowdown powerup
 const SLOW_DURATION = 300; // 5 seconds at 60fps
 const SLOW_MIN_SPEED = 4.0;
@@ -649,7 +651,7 @@ document.addEventListener('keydown', e => {
     isDucking = true;
     e.preventDefault();
   }
-  if ((e.code === 'Space' || e.code === 'Enter') && state === 'dead') {
+  if ((e.code === 'Space' || e.code === 'Enter') && state === 'dead' && deathTimer >= DEATH_EXPLODE_FRAMES) {
     restartGame();
     e.preventDefault();
   }
@@ -663,7 +665,7 @@ document.addEventListener('keyup', e => {
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
   if (state === 'playing') tryJump();
-  else if (state === 'dead') restartGame();
+  else if (state === 'dead' && deathTimer >= DEATH_EXPLODE_FRAMES) restartGame();
 }, { passive: false });
 
 document.getElementById('start-btn').addEventListener('click', startGame);
@@ -696,6 +698,7 @@ function resetGame() {
   obstacles = [];
   treasures = [];
   particles = [];
+  shockwaves = [];
   obstacleTimer = 0;
   obstacleInterval = 90;
   treasureTimer = 0;
@@ -705,6 +708,7 @@ function resetGame() {
   hitPauseTimer = 0;
   slowTimer = 0;
   treasuresCollected = 0;
+  deathTimer = 0;
 }
 
 function restartGame() {
@@ -725,6 +729,99 @@ function spawnParticles(x, y, color, count) {
       size: 2 + Math.random() * 3,
     });
   }
+}
+
+function spawnDeathExplosion() {
+  const cx = PLAYER_X, cy = playerY - SPRITE_H / 2;
+  const palette = builtSprites[selectedAvatar].palette;
+
+  // Core fireball — dense fast particles
+  for (let i = 0; i < 80; i++) {
+    const angle = (Math.PI * 2 * i) / 80 + Math.random() * 0.2;
+    const spd = 2 + Math.random() * 7;
+    particles.push({
+      x: cx + (Math.random() - 0.5) * 10,
+      y: cy + (Math.random() - 0.5) * 10,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd - 1,
+      life: 40 + Math.random() * 30,
+      maxLife: 70,
+      color: ['#ff2200','#ff6600','#ff9900','#ffcc00'][Math.floor(Math.random() * 4)],
+      size: 3 + Math.random() * 5,
+      gravity: 0.18,
+    });
+  }
+  // White-hot centre burst
+  for (let i = 0; i < 30; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = 1 + Math.random() * 4;
+    particles.push({
+      x: cx, y: cy,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd,
+      life: 20 + Math.random() * 15,
+      maxLife: 35,
+      color: Math.random() < 0.5 ? '#ffffff' : '#ffffaa',
+      size: 2 + Math.random() * 4,
+      gravity: 0.05,
+    });
+  }
+  // Dragon-colour shards
+  for (let i = 0; i < 40; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = 1 + Math.random() * 5;
+    particles.push({
+      x: cx + (Math.random() - 0.5) * 16,
+      y: cy + (Math.random() - 0.5) * 16,
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd - 2,
+      life: 50 + Math.random() * 40,
+      maxLife: 90,
+      color: palette[1 + Math.floor(Math.random() * 6)] || '#ff4400',
+      size: 2 + Math.random() * 3,
+      gravity: 0.22,
+    });
+  }
+  // Smoke puffs — slow, large, rise upward
+  for (let i = 0; i < 20; i++) {
+    particles.push({
+      x: cx + (Math.random() - 0.5) * 30,
+      y: cy + (Math.random() - 0.5) * 20,
+      vx: (Math.random() - 0.5) * 1.5,
+      vy: -0.5 - Math.random() * 1.5,
+      life: 70 + Math.random() * 50,
+      maxLife: 120,
+      color: Math.random() < 0.5 ? '#555566' : '#332233',
+      size: 8 + Math.random() * 10,
+      gravity: -0.02,
+    });
+  }
+  // Ground sparks — fly low and bounce
+  for (let i = 0; i < 25; i++) {
+    particles.push({
+      x: cx + (Math.random() - 0.5) * 20,
+      y: playerY,
+      vx: (Math.random() - 0.5) * 8,
+      vy: -2 - Math.random() * 5,
+      life: 30 + Math.random() * 25,
+      maxLife: 55,
+      color: Math.random() < 0.6 ? '#ffee00' : '#ffffff',
+      size: 1 + Math.random() * 2,
+      gravity: 0.35,
+    });
+  }
+}
+
+// Shockwave rings drawn separately (not particles)
+let shockwaves = [];
+
+function spawnShockwaves() {
+  const cx = PLAYER_X, cy = playerY - SPRITE_H / 2;
+  shockwaves = [
+    { x: cx, y: cy, r: 4, maxR: 90, life: 30, maxLife: 30, color: '#ff6600' },
+    { x: cx, y: cy, r: 2, maxR: 60, life: 22, maxLife: 22, color: '#ffcc00' },
+    { x: cx, y: cy, r: 1, maxR: 40, life: 16, maxLife: 16, color: '#ffffff' },
+  ];
 }
 
 // ── Background drawing ────────────────────────────────────────────────────────
@@ -956,6 +1053,32 @@ function loop() {
     }
   }
 
+  if (state === 'dead') {
+    deathTimer++;
+    frameCount++;
+
+    // Secondary explosions at intervals during the animation
+    if (deathTimer === 15)  { spawnDeathExplosion(); }
+    if (deathTimer === 35)  { spawnDeathExplosion(); spawnShockwaves(); }
+    if (deathTimer === 60)  { spawnDeathExplosion(); }
+    if (deathTimer === 90)  { spawnDeathExplosion(); spawnShockwaves(); }
+    if (deathTimer === 120) { spawnDeathExplosion(); }
+
+    // Keep particles + shockwaves ticking
+    particles = particles.filter(p => p.life > 0);
+    for (const p of particles) {
+      p.x += p.vx;
+      p.y += p.vy;
+      p.vy += (p.gravity !== undefined ? p.gravity : 0.15);
+      p.life--;
+    }
+    shockwaves = shockwaves.filter(s => s.life > 0);
+    for (const s of shockwaves) {
+      s.r += (s.maxR - s.r) * 0.18;
+      s.life--;
+    }
+  }
+
   if (state === 'playing') {
     frameCount++;
     score += speed * 0.05;
@@ -1014,7 +1137,7 @@ function loop() {
     for (const p of particles) {
       p.x += p.vx;
       p.y += p.vy;
-      p.vy += 0.15;
+      p.vy += (p.gravity !== undefined ? p.gravity : 0.15);
       p.life--;
     }
 
@@ -1063,6 +1186,9 @@ function loop() {
           if (hp <= 0) {
             hp = 0;
             state = 'dead';
+            deathTimer = 0;
+            spawnDeathExplosion();
+            spawnShockwaves();
           } else {
             state = 'hit';
             hitPauseTimer = HIT_PAUSE_FRAMES;
@@ -1091,9 +1217,21 @@ function loop() {
   }
   ctx.globalAlpha = 1;
 
-  // Draw player (blink when invincible)
+  // Draw shockwave rings
+  for (const s of shockwaves) {
+    const alpha = (s.life / s.maxLife) * 0.7;
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = s.color;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Draw player — hide during death explosion
   const blink = invincibleTimer > 0 && Math.floor(invincibleTimer / 6) % 2 === 0;
-  if (!blink) drawPlayer();
+  if (!blink && state !== 'dead') drawPlayer();
 
   // Draw floating score texts
   for (const f of floatingTexts) {
@@ -1108,7 +1246,7 @@ function loop() {
 
   if (state === 'hit') {
     showHitScreen();
-  } else if (state === 'dead') {
+  } else if (state === 'dead' && deathTimer >= DEATH_EXPLODE_FRAMES) {
     showDeathScreen();
   }
 
